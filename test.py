@@ -66,12 +66,17 @@ def eval_base_pgm(pgm, nums) :
     stack = [None]
     end = 0
     for p in pgm :
-        if p in BasePgm.OPs :
-            stack.append(BasePgm.tokens_i2t[p])
+        p = BasePgm.tokens_i2t[p]
+        if p in ("<None>", "<START>", "<UNKNOWN>", None) :
+            continue
+        elif p in ("<END>",) :
+            break
+        elif p in BasePgm.OPs :
+            stack.append(p)
             end -= 1
         else :
             try :
-                n2 = _get_num(G2TPgm.tokens_i2t[p], nums)
+                n2 = _get_num(p, nums)
             except :
                 return [None for _ in nums]
             while type(stack[-1]) is list :

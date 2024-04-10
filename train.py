@@ -49,15 +49,10 @@ def train(cfg) :
         RNT = cfg.get("g2t_rnt", False)
         dataset_train.load_g2t_data(cfg.path_g2t_raw, cfg.path_g2t_graph, to_load=load_g2t, revise_num_token=RNT)
         dataset_test.load_g2t_data(cfg.path_g2t_raw, cfg.path_g2t_graph, to_load=load_g2t, revise_num_token=RNT)
-    if cfg.encode_method in ("bert", "roberta") :
-        dataset_train.load_bert_token(cfg.path_bert_token)
-        dataset_test.load_bert_token(cfg.path_bert_token)
     if AUG :
-        # dataset_aug = dataset_train.load_aug(cfg.path_aug_cache, cfg, from_raw=True, weight=cfg.weight_augmentation)
         dataset_aug = DatasetMutated(dataset_train, weight=cfg.weight_aug)
         dataset_train, dataset_train_raw = dataset_aug, dataset_train
     else :
-        # dataset_sampled = DatasetSample(dataset_train, dataset_train.data_valid)
         dataset_sampled = torch.utils.data.Subset(dataset_train, dataset_train.data_valid)
         dataset_train, dataset_train_raw = dataset_sampled, dataset_train
     print("Dataset: loaded")
@@ -151,10 +146,11 @@ def train(cfg) :
             dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, collate_fn=DatasetMath.get_collate_fn(keys_test), 
                                                         shuffle=False, num_workers=num_wokers)
             debug_datasets = [dataloader_rawsub, dataloader_test]
+    else :
+        test_every = None
 
     match cfg.decode_method :
         case "lstm" :
-            # _infer = lambda _dataloader, _MILE_ : infer(_dataloader, _MILE_, _ActionNet_, cfg)
             _infer = lambda _dataloader, _MILE_ : infer_base(_dataloader, _MILE_)
         case "tree" :
             _infer = lambda _dataloader, _MILE_ : infer_tree(_dataloader, _MILE_)

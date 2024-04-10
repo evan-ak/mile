@@ -29,10 +29,10 @@ class DatasetMath(torch.utils.data.Dataset) :
                 self.programs_base = [None if d["pgm_tree"] is None else tuple(d["pgm_tree"]) for d in self.raw]
                 match cfg.decode_method :
                     case "lstm" :
-                        # preorder traversal raw
-                        self.programs_ptr = [None if p is None else tuple(BasePgm.trans_t2i(p, pad=pgm_max_len)) for p in self.programs_base]
-                        self.data_valid = [i for i,p in enumerate(self.programs_raw) if p is not None and len(p) <= pgm_max_len]
-                        self.data["y"] = self.programs_raw
+                        '''preorder traversal raw'''
+                        self.programs_ptr = [None if p is None else BasePgm.trans_t2i(p, pad=pgm_max_len) for p in self.programs_base]
+                        self.data_valid = [i for i,p in enumerate(self.programs_ptr) if p is not None and len(p) <= pgm_max_len]
+                        self.data["y"] = self.programs_ptr
                     case "tree" :
                         self.data_valid = list(range(self.N))
                         self.data["y"] = None
@@ -51,8 +51,10 @@ class DatasetMath(torch.utils.data.Dataset) :
             case "test" | "loadonly" :
                 pass
 
-        self.tokens_raw = [d["toks"] for d in self.raw]
-        self.data["x"] = self.tokens_raw
+        if not cfg.encode_method in ("bert", "roberta") :
+            self.data["x"] = [d["toks"] for d in self.raw]
+        else :
+            self.data["x"] = [d["toks_bert"] for d in self.raw]
         self.preapre_x(pad=-1)
         self.data["nums"] = [tuple(d["nums"]) for d in self.raw]
         self.data["ans"] = [tuple(d["ans"]) for d in self.raw]
@@ -71,20 +73,6 @@ class DatasetMath(torch.utils.data.Dataset) :
                 raise 
         with open(path, 'r') as f :
             self.raw = json.load(f)
-
-    def load_bert_token(self, path) :
-        if path.endswith("json") :
-            with open(path, 'r') as f :
-                cache = json.load(f)
-        elif path.endswith("pickle") :
-            with open(path, 'rb') as h :
-                cache = pickle.load(h)
-        if self.masked :
-            cache = [cache[i] for i in self.mask]
-        self.tokens_bert = [toks for (sents, toks) in cache]
-        assert len(self.tokens_bert) == len(self.tokens_raw)
-        self.data["x"] = self.tokens_bert
-        self.preapre_x(pad=-1)
 
     def load_g2t_data(self, path_raw, path_graph, to_load, raw_idx=True, revise_num_token=False) :
         with open(path_raw, 'rb') as handle :
@@ -149,7 +137,7 @@ class DatasetMath(torch.utils.data.Dataset) :
             xnm = [True]*nn + [False]*(MILEPgm.memory_width["number"]-nn)
             self.data["xnm"].append(xnm)
 
-    # all the index are from raw index in dataset
+    '''all the index are from raw index in dataset'''
     def __getitem__(self, index) :
         return {k:d[index] for k,d in self.data.items()}
 
@@ -190,29 +178,39 @@ class DatasetMath(torch.utils.data.Dataset) :
 class DatasetMutated(torch.utils.data.Dataset) :
     def __init__(self, base, mr=None, weight=False) :
         self.data = {k:[] for k in base.data.keys()}
-        self.data["w"] = []
         self.data["y"] = []
+        self.data["w"] = []
+        keys_copy = self.data.keys() - {"y", "w"}
         self.mr = mr if mr is not None else (3,15)
+        match base.cfg.decode_method :
+            case "lstm" :
+                _trans = lambda ps: [BasePgm.from_mile(p, pad=base.cfg.program_max_len)[0] for p in ps]
+            case "tree" :
+                _trans = lambda ps: [G2TPgm.from_mile(p, pad=base.cfg.program_max_len)[0] for p in ps]
+            case "mile" :
+                _trans = lambda ps: [MILEPgm.trans_t2i(p) for p in ps]
         for idx in range(len(base)) :
             pgm_v21_raw = base.raw[idx]["pgm_mile"]
             if pgm_v21_raw is None :
                 continue
-            datacopy = base[idx]
+            # datacopy = base[idx]
             pms = self.mutate(pgm_v21_raw)
-            pms = [MILEPgm.trans_t2i(pm) for pm in pms]
+            # pms = [MILEPgm.trans_t2i(pm) for pm in pms]
+            pms = _trans(pms)
             pms = [pm for pm in pms if pm is not None]
             N = len(pms)
             if N == 0 :
                 continue
-            for k,v in datacopy.items() :
-                self.data[k] += [v]*N
+            # for k,v in datacopy.items() :
+            for k in keys_copy :
+                self.data[k] += [base[idx][k]]*N
             self.data["w"] += ([1/N]*N if weight else [1.]*N)
             self.data["y"] += pms
         self.N = len(self.data["x"])
-        if base.cfg.decode_method == "lstm" :
-            self["y"] = [BasePgm.from_mile(p, pad=base.cfg.program_max_len) for p in self["y"]]
-        elif base.cfg.decode_method == "tree" :
-            self["y"] = [G2TPgm.from_mile(p, pad=base.cfg.program_max_len) for p in self["y"]]
+        # if base.cfg.decode_method == "lstm" :
+        #     self["y"] = [BasePgm.from_mile(p, pad=base.cfg.program_max_len) for p in self.data["y"]]
+        # elif base.cfg.decode_method == "tree" :
+        #     self["y"] = [G2TPgm.from_mile(p, pad=base.cfg.program_max_len) for p in self.data["y"]]
 
     def mutate(self, pgm) :
         L = len(pgm)
@@ -249,7 +247,7 @@ class MILEPgm() :
                 cls.NUM_TOKENS = set([121,122,123,124,125,126,127,128,129,130,8108,8111,8110,8124,8122,8115,8121,8126,8123,8131,8113][:cfg.memory_width["number"]])
                 cls.is_number = lambda x: x in cls.NUM_TOKENS
             case _ :
-                assert NotImplementedError
+                raise NotImplementedError
 
         cls.max_pad = 10
         cls.max_raw_len = cls.SEG*cls.max_pad
@@ -288,6 +286,8 @@ class MILEPgm() :
     '''this must be conducted on raw program'''
     @staticmethod
     def pgm_traverse(pgm, idx) :
+        if pgm[idx] == '=' :
+            return [pgm[idx+1]]
         out = [pgm[idx]]
         for tok in pgm[idx+1:idx+3] :
             if tok[0] != 'M' :
@@ -332,7 +332,7 @@ class BasePgm() :
     def init(cls, cfg) :
         cls.tokens_i2t = ["<None>", "<START>", "<END>", "<UNKNOWN>", None,
                           *cls.OPs,
-                          *(f"N_{str(i):>02d}" for i in range(cfg.memory_width["number"])),
+                          *(f"N_{i:>02d}" for i in range(cfg.memory_width["number"])),
                           *(f"C_{c}" for c in cls.Consts),
                           ]
         cls.tokens_t2i = {v:i for i,v in enumerate(cls.tokens_i2t)}

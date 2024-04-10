@@ -326,6 +326,8 @@ class DecoderLSTM(torch.nn.Module) :
                                                         torch.nn.Tanh())
         self.encoder_embed_dim = cfg.encoder_embed_dim
 
+        self.current_decode_range = len(BasePgm.tokens_i2t)
+
     def forward(self, batch) :
         x = batch["x"]
         y = batch["y"]
@@ -351,7 +353,7 @@ class DecoderLSTM(torch.nn.Module) :
 
             decoder_embed = self.decoder_embeding(decoder_token)
             decoder_embed = self.attention_comb_in(torch.cat((decoder_embed, cross_attention), -1))
-            decoder_output, decoder_hidden = self.decoder_rnn(decoder_embed, (*decoder_hidden,))            
+            decoder_output, decoder_hidden = self.decoder_rnn(decoder_embed, (*decoder_hidden,))
             
             # [2, 2, N, 512] -> [2, N, 1024] -> [N, 1, 1024]
             hidden_last = torch.cat(decoder_hidden, -1)[-1].unsqueeze(1)
@@ -677,7 +679,7 @@ class DecoderMILE(torch.nn.Module) :
                                                             dropout=0.5,
                                                             ) for _ in range(NH)])
 
-        '''==== attention ===='''
+        ''' ==== attention ==== '''
         self.memory_sum_att_query_net = torch.nn.Sequential(torch.nn.Linear(cfg.decoder_hidden_dim, cfg.memory_embed_dim),
                                                             # torch.nn.Tanh(),
                                                             )

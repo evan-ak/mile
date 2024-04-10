@@ -25,6 +25,7 @@ class TotalConfig() :
         self.test_metric = ("5flod", "public")[0]
         self.test_split_seed = "standard seed 0"
         '''extra data'''
+        self.lstm_load_word_embedding = False
         '''formula augmentation'''
         self.use_aug = True
         '''bert model'''
